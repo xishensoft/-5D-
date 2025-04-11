@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>5D皮肤包管理工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .upload-container {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .file-upload {
+            margin: 10px 0;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            background-color: #e8f5e9;
+            border-left: 4px solid #4CAF50;
+        }
+        .error {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            background-color: #ffebee;
+            border-left: 4px solid #f44336;
+            color: #d32f2f;
+        }
+        .message {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196F3;
+        }
+        .skin-list {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+        }
+        .skin-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: white;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .skin-name {
+            font-weight: bold;
+            color: #333;
+            margin-right: 15px;
+        }
+        .skin-details {
+            flex-grow: 1;
+            margin: 0 15px;
+            word-break: break-all;
+        }
+        .skin-actions {
+            display: flex;
+            gap: 5px;
+        }
+        .skin-actions button {
+            padding: 5px 10px;
+            font-size: 14px;
+        }
+        .skin-actions button.delete {
+            background-color: #f44336;
+        }
+        .skin-actions button.delete:hover {
+            background-color: #d32f2f;
+        }
+        .add-skin {
+            margin-top: 20px;
+            text-align: center;
+        }
+        .skin-editor {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            background-color: #f0f8ff;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>5D皮肤包管理工具</h1>
+        
+        <div class="upload-container">
+            <button onclick="initTemplate()">新建皮肤包</button>
+            <button onclick="processSkinPackage()">导入皮肤包</button>
+            <div class="file-upload">
+                <input type="file" id="importPackage" accept=".zip" onchange="importSkinPackage(this)">
+            </div>
+        </div>
+        
+        <div id="result" class="result" style="display: none;"></div>
+        <div id="error" class="error" style="display: none;"></div>
+        
+        <div id="skinList" class="skin-list" style="display: none;">
+            <h3>皮肤列表</h3>
+            <div id="skinItems"></div>
+            
+            <div class="add-skin">
+                <button onclick="showSkinEditor()">添加新皮肤</button>
+            </div>
+            
+            <div id="skinEditor" class="skin-editor">
+                <h4>添加新皮肤</h4>
+                <div class="file-upload">
+                    <p style="margin: 5px 0; font-size: 14px; color: #666;">请选择geometry.json文件</p>
+                    <input type="file" id="geometryFile" accept=".json" onchange="handleGeometryFile(this)">
+                </div>
+                <div class="file-upload">
+                    <p style="margin: 5px 0; font-size: 14px; color: #666;">请选择skin.png纹理文件</p>
+                    <input type="file" id="textureFile" accept=".png" onchange="handleTextureFile(this)">
+                </div>
+                <div>
+                    <label for="skinName">皮肤名称:</label>
+                    <input type="text" id="skinName" placeholder="输入皮肤名称">
+                </div>
+                <div style="margin-top: 10px; text-align: right;">
+                    <button onclick="addNewSkin()">保存</button>
+                    <button onclick="cancelAddSkin()">取消</button>
+                </div>
+            </div>
+            
+            <button id="saveButton" onclick="saveFilesAsZip()" style="display: none; margin-top: 20px;">导出压缩包</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+    <script>
+        let skinsData = {
+            skins: [],
+            serialize_name: "Custom Skins",
+            localization_name: "Custom Skins"
+        };
+        let geometryData = {
+            format_version: "1.8.0"
+        };
+        let selectedGeometryFile = null;
+        let selectedTextureFile = null;
+        let textureFiles = [];
+        let importedPackage = null;
+
+        // manifest.json 内容
+        const manifestContent = {
+            "format_version": 2,
+            "header": {
+                "name": "Custom Skin Pack",
+                "uuid": "4ecf8de6-8e36-3c22-2326-6a7bdcf70101",
+                "version": [1, 0, 0]
+            },
+            "modules": [
+                {
+                    "type": "skin_pack",
+                    "uuid": "cd48d889-d0db-b924-40e5-849fd65e11e5",
+                    "version": [1, 0, 0]
+                }
+            ]
+        };
+
+        function initTemplate() {
+            skinsData = {
+                skins: [],
+                serialize_name: "Custom Skins",
+                localization_name: "Custom Skins"
+            };
+            geometryData = {
+                format_version: "1.8.0"
+            };
+            textureFiles = [];
+            displaySkins();
+            document.getElementById('skinList').style.display = 'block';
+            document.getElementById('saveButton').style.display = 'inline-block';
+            showResult("已初始化模板，可以开始添加新皮肤");
+        }
+
+        function displaySkins() {
+            const skinItemsDiv = document.getElementById('skinItems');
+            skinItemsDiv.innerHTML = '';
+            
+            skinsData.skins.forEach((skin, index) => {
+                const skinItemDiv = document.createElement('div');
+                skinItemDiv.className = 'skin-item';
+                skinItemDiv.innerHTML = `
+                    <div class="skin-item">
+                        <div class="skin-name">${skin.localization_name}</div>
+                        <div class="skin-preview">
+                            <img src="${URL.createObjectURL(textureFiles.find(f => f.name === skin.texture)?.file)}" 
+                                 alt="${skin.localization_name} 预览" 
+                                 style="max-width: 100px; max-height: 100px;">
+                        </div>
+                        <div class="skin-details">
+                            <div>geometry: ${skin.geometry}</div>
+                            <div>texture: ${skin.texture}</div>
+                            <div>type: ${skin.type}</div>
+                        </div>
+                        <div class="skin-actions">
+                            <button class="delete" onclick="deleteSkin(${index})">删除</button>
+                        </div>
+                    </div>
+                `;
+                
+                skinItemsDiv.appendChild(skinItemDiv);
+            });
+            
+            showResult(`当前 skins.json 文件中包含 ${skinsData.skins.length} 个皮肤`);
+        }
+
+        function showSkinEditor() {
+            document.getElementById('skinEditor').style.display = 'block';
+            selectedGeometryFile = null;
+            selectedTextureFile = null;
+            document.getElementById('skinName').value = '';
+            document.getElementById('geometryFile').value = '';
+            document.getElementById('textureFile').value = '';
+        }
+
+        function handleGeometryFile(input) {
+            selectedGeometryFile = input.files[0];
+            if (selectedGeometryFile) {
+                showResult(`已选择 geometry 文件: ${selectedGeometryFile.name}`);
+            }
+        }
+
+        function handleTextureFile(input) {
+            selectedTextureFile = input.files[0];
+            if (selectedTextureFile) {
+                showResult(`已选择 texture 文件: ${selectedTextureFile.name}`);
+            }
+        }
+
+        function addNewSkin() {
+            const skinName = document.getElementById('skinName').value.trim();
+            
+            if (!skinName) {
+                showError("请输入皮肤名称！");
+                return;
+            }
+            
+            if (!selectedGeometryFile) {
+                showError("请选择 geometry 文件！");
+                return;
+            }
+            
+            if (!selectedTextureFile) {
+                showError("请选择 texture 文件！");
+                return;
+            }
+            
+            // 生成新的 geometry.n 和 texture 名称
+            const index = skinsData.skins.length;
+            const geometryName = `geometry.n${index}`;
+            const textureName = `skin_${index}.png`;
+            
+            // 读取 geometry 文件内容
+            const geometryReader = new FileReader();
+            geometryReader.onload = function(e) {
+                try {
+                    const geometryContent = JSON.parse(e.target.result);
+                    
+                    // 确保 geometry.json 的 format_version 存在
+                    if (!geometryData.format_version) {
+                        geometryData.format_version = "1.8.0";
+                    }
+                    
+                    // 修改这里：只提取 geometry.n0 的内容
+                    if (geometryContent['geometry.n0']) {
+                        geometryData[geometryName] = geometryContent['geometry.n0'];
+                    } else {
+                        // 如果没有 geometry.n0，则保留整个内容
+                        geometryData[geometryName] = geometryContent;
+                    }
+                    
+                    // 添加新皮肤到列表
+                    skinsData.skins.push({
+                        localization_name: skinName,
+                        geometry: geometryName,
+                        texture: textureName,
+                        type: "free"
+                    });
+                    
+                    // 保存 texture 文件
+                    textureFiles.push({
+                        name: textureName,
+                        file: selectedTextureFile
+                    });
+                    
+                    displaySkins();
+                    document.getElementById('skinEditor').style.display = 'none';
+                    showResult(`已添加新皮肤: ${skinName}`);
+                    
+                    // 清空文件选择
+                    document.getElementById('geometryFile').value = '';
+                    document.getElementById('textureFile').value = '';
+                    selectedGeometryFile = null;
+                    selectedTextureFile = null;
+                } catch (error) {
+                    showError("geometry 文件内容不是有效的 JSON 格式！");
+                }
+            };
+            
+            geometryReader.onerror = function() {
+                showError("读取 geometry 文件时发生错误！");
+            };
+            
+            geometryReader.readAsText(selectedGeometryFile);
+        }
+
+        function cancelAddSkin() {
+            document.getElementById('skinEditor').style.display = 'none';
+            document.getElementById('geometryFile').value = '';
+            document.getElementById('textureFile').value = '';
+            selectedGeometryFile = null;
+            selectedTextureFile = null;
+        }
+
+        function deleteSkin(index) {
+            if (confirm("确定要删除这个皮肤吗？")) {
+                const skin = skinsData.skins[index];
+                const geometryName = skin.geometry;
+                const textureName = skin.texture;
+                
+                // 从 geometryData 中移除对应的 geometry
+                if (geometryData.hasOwnProperty(geometryName)) {
+                    delete geometryData[geometryName];
+                }
+                
+                // 从 textureFiles 中移除对应的 texture
+                textureFiles = textureFiles.filter(file => file.name !== textureName);
+                
+                skinsData.skins.splice(index, 1);
+                displaySkins();
+                showResult(`已删除皮肤: ${skin.localization_name}`);
+            }
+        }
+
+        function importSkinPackage(input) {
+            importedPackage = input.files[0];
+            if (importedPackage) {
+                showResult(`已选择皮肤包: ${importedPackage.name}`);
+            }
+        }
+
+        function processSkinPackage() {
+            if (!importedPackage) {
+                showError("请先选择一个皮肤包！");
+                return;
+            }
+            
+            const { JSZip } = JSZipLibrary;
+            const zip = new JSZip();
+            
+            zip.loadAsync(importedPackage)
+                .then(function (zipContent) {
+                    if (zipContent.files['skins.json']) {
+                        return zipContent.file('skins.json').async('string').then(function (content) {
+                            try {
+                                skinsData = JSON.parse(content);
+                                showResult("已加载 skins.json");
+                                
+                                if (zipContent.files['geometry.json']) {
+                                    return zipContent.file('geometry.json').async('string').then(function (content) {
+                                        try {
+                                            geometryData = JSON.parse(content);
+                                            showResult("已加载 geometry.json");
+                                            
+                                            // 收集所有图片文件的Promise
+                                            const texturePromises = [];
+                                            Object.keys(zipContent.files).forEach(function (fileName) {
+                                                if (fileName.endsWith('.png')) {
+                                                    texturePromises.push(
+                                                        zipContent.file(fileName).async('blob').then(function (blob) {
+                                                            textureFiles.push({
+                                                                name: fileName,
+                                                                file: blob
+                                                            });
+                                                            showResult(`已加载 texture 文件: ${fileName}`);
+                                                        })
+                                                    );
+                                                }
+                                            });
+                                            
+                                            // 等待所有图片加载完成
+                                            return Promise.all(texturePromises).then(() => {
+                                                displaySkins();
+                                                document.getElementById('skinList').style.display = 'block';
+                                                document.getElementById('saveButton').style.display = 'inline-block';
+                                                showResult("皮肤包导入成功！");
+                                                // 清空文件选择框
+                                                document.getElementById('importPackage').value = '';
+                                                importedPackage = null;
+                                            });
+                                            
+                                        } catch (error) {
+                                            showError("geometry.json 文件内容不是有效的 JSON 格式！");
+                                        }
+                                    });
+                                } else {
+                                    showResult("皮肤包中没有 geometry.json 文件");
+                                    displaySkins();
+                                    document.getElementById('skinList').style.display = 'block';
+                                    document.getElementById('saveButton').style.display = 'inline-block';
+                                }
+                            } catch (error) {
+                                showError("skins.json 文件内容不是有效的 JSON 格式！");
+                            }
+                        });
+                    } else {
+                        showResult("皮肤包中没有 skins.json 文件");
+                        initTemplate();
+                    }
+                })
+                .catch(function (error) {
+                    showError("导入皮肤包时发生错误: " + error);
+                });
+        }
+
+        function saveFilesAsZip() {
+            const { JSZip } = JSZipLibrary;
+            
+            // 创建一个新的压缩包
+            const zip = new JSZip();
+            
+            // 添加 skins.json
+            const skinsDataStr = JSON.stringify(skinsData, null, 2);
+            zip.file('skins.json', skinsDataStr);
+            
+            // 添加 geometry.json
+            const geometryDataStr = JSON.stringify(geometryData, null, 2);
+            zip.file('geometry.json', geometryDataStr);
+            
+            // 添加 texture 文件
+            textureFiles.forEach(file => {
+                zip.file(file.name, file.file, { binary: true });
+            });
+            
+            // 添加 manifest.json
+            zip.file('manifest.json', JSON.stringify(manifestContent, null, 2));
+            
+            // 生成压缩包
+            zip.generateAsync({ type: 'blob' })
+                .then(function(content) {
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(content);
+                    a.download = 'skins_package.zip';
+                    a.click();
+                    showResult("所有文件已导出为压缩包！");
+                });
+        }
+
+        function showResult(message) {
+            const resultDiv = document.getElementById('result');
+            const errorDiv = document.getElementById('error');
+            
+            resultDiv.textContent = message;
+            resultDiv.style.display = 'block';
+            errorDiv.style.display = 'none';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            const resultDiv = document.getElementById('result');
+            
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            resultDiv.style.display = 'none';
+        }
+        
+        // 加载 JSZip 库
+        const JSZipLibrary = {};
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js';
+        script.onload = function() {
+            // JSZip 库加载完成后，将其添加到 JSZipLibrary
+            JSZipLibrary.JSZip = JSZip;
+        };
+        document.head.appendChild(script);
+    </script>
+</body>
+</html>
